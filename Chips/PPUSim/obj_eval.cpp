@@ -241,7 +241,13 @@ namespace PPUSim
 		ORES = NOR(n_PCLK, eval_latch.get());
 		nomfg_latch.set(NOT(OMFG), n_PCLK);
 		ioam2_latch.set(I_OAM2, n_PCLK);
-		auto DontStep = NOR(NOR(NOR(nomfg_latch.get(), ioam2_latch.get()), H0_D), AND(n_H2_D, OBJ_READ));
+		// OSTEP opens as soon as /PCLK falls, while OBJ_READ (latched by PCLK) is still settling:
+		// on the die the step also sees OBJ_READ as it was during /PCLK. So the last group of the
+		// sprite fetch gets its 4th step at H=321 as OBJ_READ falls, the Temp counter wraps to 0
+		// and OAMCTR2 is set (Visual 2C02 inc_spr_ptr/spr_ptr_overflow; AccuracyCoin
+		// "Misaligned OAM2 Address", "Frozen OAM2 Increment").
+		objrd_latch.set(OBJ_READ, n_PCLK);
+		auto DontStep = NOR(NOR(NOR(nomfg_latch.get(), ioam2_latch.get()), H0_D), AND(n_H2_D, OR(OBJ_READ, objrd_latch.get())));
 		temp_latch1.set(NAND(OAMCTR2_FF.nget(), n_EVAL), n_PCLK);
 		OSTEP = NOR3(temp_latch1.get(), n_PCLK, DontStep);
 	}

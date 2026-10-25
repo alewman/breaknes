@@ -101,5 +101,6 @@ namespace PPUSimUnitTest
 		/// Full-PPU integration test: $2002[7] = 1 during VBlank, read clears the flag.
 		/// </summary>
 		bool TestVBlankRead2002();
+		bool TestTempCounterWrapAt321();
 	};
 }

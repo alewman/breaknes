@@ -93,6 +93,7 @@ namespace PPUSim
 		BaseLogic::DLatch nomfg_latch;
 		BaseLogic::DLatch ioam2_latch;
 		BaseLogic::DLatch temp_latch1;
+		BaseLogic::DLatch objrd_latch;		// OBJ_READ as the Temp counter step saw it before PCLK rose
 		BaseLogic::DLatch omfg_latch;
 		BaseLogic::DLatch setov_latch;
 		BaseLogic::FF OAMCTR2_FF;

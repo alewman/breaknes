@@ -2702,6 +2702,57 @@ namespace PPUSimUnitTest
 
 		return true;
 	}
+
+	/// <summary>
+	/// Full-PPU test: the Temp (OAM2) counter at the end of the sprite fetch.
+	/// The fetch steps the counter four times per sprite (8 sprites, 32 bytes); the last group's
+	/// 4th step falls at H=321, together with the fall of OBJ_READ, so the counter wraps to 0 and
+	/// OAMCTR2 is set. A $2004 read during H=321-340 therefore returns OAM2[0]
+	/// (Visual 2C02 spr_ptr/spr_ptr_overflow; AccuracyCoin "Misaligned OAM2 Address" 3).
+	/// </summary>
+	/// <returns></returns>
+	bool UnitTest::TestTempCounterWrapAt321()
+	{
+		char text[0x100]{};
+
+		ppu->regs->Debug_RenderAlwaysEnabled(true);
+
+		// Go to a visible line, then to the end of its sprite fetch.
+
+		while (!(ppu->GetVCounter() == 10 && ppu->GetHCounter() == 318))
+		{
+			RunSinglePCLK();
+		}
+
+		auto temp = [this]()
+		{
+			size_t value = 0;
+			for (size_t n = 0; n < 5; n++)
+			{
+				value |= (size_t)ToByte(ppu->eval->OAM_Temp[n]) << n;
+			}
+			return value;
+		};
+
+		sprintf_s(text, sizeof(text), "H=318: Temp counter=%zd, OAMCTR2=%d\n", temp(), ToByte(ppu->wire.OAMCTR2));
+		Logger::WriteMessage(text);
+
+		PUIT_CHECK(temp() == 31, "H=318: the Temp counter holds the last byte (31)");
+		PUIT_CHECK(ppu->wire.OAMCTR2 == TriState::Zero, "H=318: OAMCTR2 is not set yet");
+
+		while (ppu->GetHCounter() != 322)
+		{
+			RunSinglePCLK();
+		}
+
+		sprintf_s(text, sizeof(text), "H=322: Temp counter=%zd, OAMCTR2=%d\n", temp(), ToByte(ppu->wire.OAMCTR2));
+		Logger::WriteMessage(text);
+
+		PUIT_CHECK(temp() == 0, "H=322: the Temp counter wrapped to 0 at H=321");
+		PUIT_CHECK(ppu->wire.OAMCTR2 == TriState::One, "H=322: OAMCTR2 is set by the wrap");
+
+		return true;
+	}
 }
 
 namespace UnitTest
@@ -2942,6 +2993,12 @@ namespace UnitTest
 		{
 			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
 			Assert::IsTrue(ut.TestVBlankRead2002());
+		}
+
+		TEST_METHOD(TestTempCounterWrapAt321)
+		{
+			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
+			Assert::IsTrue(ut.TestTempCounterWrapAt321());
 		}
 	};
 }
