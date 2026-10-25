@@ -423,9 +423,12 @@ namespace PPUSim
 		// The internal PPU buses do not use the Bus Conflicts resolver because of the large Capacitance.
 
 		uint8_t DB = 0;				// CPU I/F Data bus
+		size_t DB_Refresh[8]{};		// PCLK at which each DB bit was last driven (the I/O latch decays, see DecayDB)
+		static const size_t DBDecayPclks = 3'221'591;	// ~600 ms of PCLK (NTSC)
 		uint8_t PD = 0;				// Internal PPU Data bus
 
 		void sim_BusInput(uint8_t* ext, uint8_t* data_bus, uint8_t* ad_bus);
+		void DecayDB();
 		void sim_BusOutput(uint8_t* ext, uint8_t* data_bus, uint8_t* ad_bus, uint8_t* addrHi_bus);
 
 		BaseLogic::DLatch extout_latch[4]{};

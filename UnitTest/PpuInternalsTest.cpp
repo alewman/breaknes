@@ -2702,6 +2702,40 @@ namespace PPUSimUnitTest
 
 		return true;
 	}
+
+	/// <summary>
+	/// The DB (I/O) latch decays: a bit not driven for DBDecayPclks reads back as 0 on the CPU bus,
+	/// a bit driven more recently keeps its value (blargg's ppu_open_bus; AccuracyCoin
+	/// "PPU Register Open Bus", error 5).
+	/// </summary>
+	/// <returns></returns>
+	bool UnitTest::TestDBDecay()
+	{
+		ppu->pclk_counter = 1000;
+		for (size_t n = 0; n < 8; n++)
+		{
+			ppu->SetDBBit(n, TriState::One);	// all bits driven at PCLK 1000
+		}
+
+		ppu->pclk_counter = 1000 + PPU::DBDecayPclks - 1;
+		ppu->DecayDB();
+		PUIT_CHECK(ppu->DB == 0xFF, "DB holds just before the decay time");
+
+		for (size_t n = 5; n < 8; n++)
+		{
+			ppu->SetDBBit(n, TriState::One);	// bits 7-5 driven again (a $2002 read)
+		}
+
+		ppu->pclk_counter = 1000 + PPU::DBDecayPclks;
+		ppu->DecayDB();
+		PUIT_CHECK(ppu->DB == 0xE0, "the bits not driven again have decayed to 0");
+
+		ppu->pclk_counter = 10;					// the PCLK counter was reset (/RES)
+		ppu->DecayDB();
+		PUIT_CHECK(ppu->DB == 0xE0, "a reset of the PCLK counter does not decay DB");
+
+		return true;
+	}
 }
 
 namespace UnitTest
@@ -2942,6 +2976,12 @@ namespace UnitTest
 		{
 			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
 			Assert::IsTrue(ut.TestVBlankRead2002());
+		}
+
+		TEST_METHOD(TestDBDecay)
+		{
+			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
+			Assert::IsTrue(ut.TestDBDecay());
 		}
 	};
 }

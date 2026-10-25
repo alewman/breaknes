@@ -212,6 +212,10 @@ namespace PPUSim
 		if (wire.n_WR == TriState::Zero)
 		{
 			DB = *data_bus;
+			for (size_t n = 0; n < 8; n++)
+			{
+				DB_Refresh[n] = pclk_counter;
+			}
 
 			// CPU I/F register write: one line per write access ($2000-$2007).
 			if (prev_n_WR != TriState::Zero)
@@ -262,6 +266,7 @@ namespace PPUSim
 
 		if (wire.n_RD == TriState::Zero)
 		{
+			DecayDB();
 			*data_bus = DB;
 
 			// CPU I/F register read: one line per read access ($2000-$2007).
@@ -346,6 +351,28 @@ namespace PPUSim
 			uint8_t out = DB & ~(1 << n);
 			out |= (bit_val == BaseLogic::One ? 1 : 0) << n;
 			DB = out;
+			DB_Refresh[n] = pclk_counter;
+		}
+	}
+
+	/// <summary>
+	/// The DB latch is dynamic: a bit that is not driven (by a CPU write, or by a register read that
+	/// defines it) for about 600 ms decays to 0, so an open-bus read of it then gives 0
+	/// (blargg's ppu_open_bus readme; AccuracyCoin "PPU Register Open Bus", error 5).
+	/// Applied when DB goes out to the CPU, the only place the decayed value is visible.
+	/// </summary>
+	void PPU::DecayDB()
+	{
+		for (size_t n = 0; n < 8; n++)
+		{
+			if (DB_Refresh[n] > pclk_counter)
+			{
+				DB_Refresh[n] = pclk_counter;	// the PCLK counter was reset
+			}
+			else if (pclk_counter - DB_Refresh[n] >= DBDecayPclks)
+			{
+				DB &= ~(1 << n);
+			}
 		}
 	}
 
