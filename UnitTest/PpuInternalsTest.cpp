@@ -1221,7 +1221,9 @@ namespace PPUSimUnitTest
 
 		OAMBufferBit ob(ppu);
 
-		ob.sim(&lane, 0, 0, TriState::Zero, TriState::Zero);
+		// A read cycle (/WE=1) loads the buffer from the cell
+
+		ob.sim(&lane, 0, 0, TriState::Zero, TriState::One);
 
 		PUIT_CHECK(ob.get() == TriState::One, "OAMBufferBit loaded from OAM cell");
 		PUIT_CHECK(ppu->wire.OB[0] == TriState::One, "OAMBufferBit drives OB wire");
@@ -1231,9 +1233,29 @@ namespace PPUSimUnitTest
 		ppu->wire.PCLK = TriState::One;
 		ppu->wire.n_PCLK = TriState::Zero;
 
-		ob.sim(&lane, 0, 0, TriState::Zero, TriState::Zero);
+		ob.sim(&lane, 0, 0, TriState::Zero, TriState::One);
 
 		PUIT_CHECK(ob.get() == TriState::One, "OAMBufferBit holds at PCLK=1");
+
+		// A write cycle (/WE=0) drives the cell from the buffer, which keeps its value:
+		// buffer 0 (out_latch takes it at PCLK=1 with OB_OAM=1), cell 1 -> cell 0, buffer still 0
+
+		ob.set(TriState::Zero);
+		ob.sim(&lane, 0, 0, TriState::One, TriState::One);
+		ppu->wire.PCLK = TriState::Zero;
+		ppu->wire.n_PCLK = TriState::One;
+		TriState w1 = TriState::One;
+		lane.sim(0, 0, w1);
+
+		ob.sim(&lane, 0, 0, TriState::Zero, TriState::Zero);
+
+		PUIT_CHECK(ob.get() == TriState::Zero, "OAMBufferBit keeps its value in a write cycle");
+		TriState cell = TriState::Z;
+		lane.sim(0, 0, cell);
+		PUIT_CHECK(cell == TriState::Zero, "OAMBufferBit writes its value to the cell");
+
+		ppu->wire.PCLK = TriState::One;
+		ppu->wire.n_PCLK = TriState::Zero;
 
 		// set/get roundtrip
 
@@ -2702,6 +2724,67 @@ namespace PPUSimUnitTest
 
 		return true;
 	}
+
+	/// <summary>
+	/// Full-PPU test: the OAM buffer during the OAM2 write cycles of sprite evaluation.
+	/// The copy alternates an OAM read (odd H) and an OAM2 write (even H). In the write cycle the
+	/// column is driven from the buffer, so the buffer keeps the byte being copied, and $2004 reads
+	/// it (Visual 2C02 spr_d0-7; AccuracyCoin "$2004 Stress Test"). It must not load the OAM2 cell's
+	/// old value ($FF from the clear).
+	/// </summary>
+	/// <returns></returns>
+	bool UnitTest::TestOBKeptInWriteCycle()
+	{
+		char text[0x100]{};
+
+		ppu->regs->Debug_RenderAlwaysEnabled(true);
+
+		for (size_t n = 0; n < 256; n++)
+		{
+			ppu->Dbg_OAMWriteByte(n, 0xF0);
+		}
+		ppu->Dbg_OAMWriteByte(0, 0x05);		// Sprite 0: Y=5, in range of line 10
+		ppu->Dbg_OAMWriteByte(1, 0x11);
+		ppu->Dbg_OAMWriteByte(2, 0x22);
+		ppu->Dbg_OAMWriteByte(3, 0x33);
+
+		while (!(ppu->GetVCounter() == 10 && ppu->GetHCounter() == 66))
+		{
+			RunSinglePCLK();
+		}
+
+		// Half-clocks through H=66, the first OAM2 write: the buffer at its last /PCLK half-clock.
+
+		uint8_t ob = 0;
+		TriState CLK = TriState::Zero;
+		while (ppu->GetHCounter() == 66)
+		{
+			RunSingleHalfCLK(CLK, TriState::One);
+			CLK = NOT(CLK);
+			if (ppu->GetHCounter() == 66 && ppu->wire.PCLK == TriState::Zero)
+			{
+				ob = 0;
+				for (size_t n = 0; n < 8; n++)
+				{
+					ob |= ToByte(ppu->wire.OB[n]) << n;
+				}
+			}
+		}
+
+		sprintf_s(text, sizeof(text), "Line 10, the first OAM2 write (H=66): OB=0x%02X\n", ob);
+		Logger::WriteMessage(text);
+
+		PUIT_CHECK(ob == 0x05, "the OAM buffer keeps the byte written to OAM2 (sprite 0's Y)");
+
+		while (ppu->GetHCounter() != 257)
+		{
+			RunSinglePCLK();
+		}
+
+		PUIT_CHECK(ppu->Dbg_TempOAMReadByte(0) == 0x05, "OAM2[0] holds sprite 0's Y after the evaluation");
+
+		return true;
+	}
 }
 
 namespace UnitTest
@@ -2942,6 +3025,12 @@ namespace UnitTest
 		{
 			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
 			Assert::IsTrue(ut.TestVBlankRead2002());
+		}
+
+		TEST_METHOD(TestOBKeptInWriteCycle)
+		{
+			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
+			Assert::IsTrue(ut.TestOBKeptInWriteCycle());
 		}
 	};
 }

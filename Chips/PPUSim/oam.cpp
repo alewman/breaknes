@@ -252,10 +252,22 @@ namespace PPUSim
 
 		auto n_R4_Enable = NOT(NOR(n_R4, n_DBE));
 
+		// During a write (/WE) the column is driven from out_latch, so that is what the input
+		// latch sees; the cell's old value is not sensed. Otherwise an OAM2 write cycle of the
+		// sprite evaluation would load OB with the old OAM2 byte (e.g. $FF from the clear) instead
+		// of keeping the byte being copied, and $2004 would read it (Visual 2C02 spr_d0-7;
+		// AccuracyCoin "$2004 Stress Test").
 		TriState FromOAM = TriState::Z;
 		if (lane != nullptr)
 		{
-			lane->sim(row, bit_num, FromOAM);
+			if (n_WE == TriState::Zero)
+			{
+				FromOAM = out_latch.get();
+			}
+			else
+			{
+				lane->sim(row, bit_num, FromOAM);
+			}
 		}
 
 		Input_FF.set(MUX(PCLK, FromOAM, TriState::Zero));
