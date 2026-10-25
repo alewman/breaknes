@@ -50,24 +50,26 @@ void SoundOutput::Mixer(void* thisptr, Uint8* stream, int len)
 
 void SoundOutput::FeedSample()
 {
+	// Average the APU output over the decimation window instead of taking one sample of it.
+	// Taking one sample folds everything above 24 kHz into the audible band: e.g. a triangle
+	// at timer period 0 (55.9 kHz, used by games to silence it) came out as a 7.9 kHz tone
+	// (issue #533). The average is a box low-pass with nulls at the output rate's multiples.
+
+	float sample;
+	SampleAudioSignal(&sample);
+	SampleSum += sample;
+	DecimateCounter++;
+
 	if (DecimateCounter >= DecimateEach)
 	{
-		float sample;
-		{
-			SampleAudioSignal(&sample);
-		}
-
-		SampleBuf[SampleBuf_Ptr++] = (int16_t)(sample * (float)INT16_MAX);
+		SampleBuf[SampleBuf_Ptr++] = (int16_t)(SampleSum / (float)DecimateCounter * (float)INT16_MAX);
+		SampleSum = 0.0f;
 		DecimateCounter = 0;
 
 		if (SampleBuf_Ptr >= SampleBuf_Size)
 		{
 			Playback();
 		}
-	}
-	else
-	{
-		DecimateCounter++;
 	}
 }
 
@@ -81,6 +83,7 @@ void SoundOutput::Redecimate()
 	DecimateEach = aux_features.SampleRate / OutputSampleRate;
 	printf ("APUSim sample rate: %d, SoundCard sample rate: %d, decimate factor: %d\n", aux_features.SampleRate, OutputSampleRate, DecimateEach);
 	DecimateCounter = 0;
+	SampleSum = 0.0f;
 }
 
 void SoundOutput::Playback()

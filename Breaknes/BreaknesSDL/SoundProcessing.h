@@ -14,6 +14,7 @@ class SoundOutput
 
 	int DecimateEach;
 	int DecimateCounter;
+	float SampleSum = 0.0f;		// The APU output summed over the current decimation window (box low-pass)
 	const int OutputSampleRate = 48000;
 
 	int16_t* SampleBuf;
