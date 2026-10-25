@@ -127,11 +127,25 @@ namespace PPUSim
 			// H/V Control logic
 
 			TriState* HPLA;
-			hv_dec->sim_HDecoder(hv_fsm->get_VB(), hv_fsm->get_BLNK(wire.BLACK), &HPLA);
+			TriState VB = hv_fsm->get_VB();
+			TriState BLNK = hv_fsm->get_BLNK(wire.BLACK);
+			hv_dec->sim_HDecoder(VB, BLNK, &HPLA);
 			TriState* VPLA;
 			hv_dec->sim_VDecoder(&VPLA);
 
 			hv_fsm->sim(HPLA, VPLA);
+
+			// VB and BLNK come from FSM flip-flops that change during /PCLK. On the die the H decoder
+			// rows that take them follow within that phase, and so do the H position latches that
+			// are open in it: /VIS rises at H=1 of line 0, where VB falls, and I/OAM2 and /FO at H=1
+			// of the pre-render line, where BLNK falls (Visual 2C02 ++/in_visible_frame_and_rendering,
+			// ++hpos_lt_64_and_rendering, not_rendering). Decode again with the new values so the
+			// latches see what the die's see.
+			if (hv_fsm->get_VB() != VB || hv_fsm->get_BLNK(wire.BLACK) != BLNK)
+			{
+				hv_dec->sim_HDecoder(hv_fsm->get_VB(), hv_fsm->get_BLNK(wire.BLACK), &HPLA);
+				hv_fsm->sim(HPLA, VPLA);
+			}
 
 			h->sim(TriState::One, wire.HC);
 			TriState V_IN = HPLA[23];

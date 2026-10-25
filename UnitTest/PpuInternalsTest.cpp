@@ -2702,6 +2702,49 @@ namespace PPUSimUnitTest
 
 		return true;
 	}
+
+	/// <summary>
+	/// Full-PPU test: the H decoder follows VB and BLNK within the phase they change in.
+	/// VB (an FSM flip-flop) falls during /PCLK of H=0 on line 0; the H decoder row for the visible
+	/// area takes VB, and its first latch is open in that phase, so /VIS is active from H=1, as on
+	/// every other visible line (Visual 2C02 ++/in_visible_frame_and_rendering). With /VIS a dot
+	/// late, a sprite lane left active from the pre-render fetch is cleared by #0/H before it can
+	/// shift: after the odd-frame skip the 2C02 shows that sprite's first pixel at x=0 (AccuracyCoin
+	/// "Sprites On Scanline 0", composite PPU). BLNK falls the same way at H=0 of the pre-render
+	/// line, and the rows that take it (the OAM2 clear, the fetches) are active from H=1 there
+	/// (Visual 2C02 ++hpos_lt_64_and_rendering, not_rendering).
+	/// </summary>
+	/// <returns></returns>
+	bool UnitTest::TestVisAtLine0()
+	{
+		char text[0x100]{};
+
+		ppu->regs->Debug_RenderAlwaysEnabled(true);
+
+		while (!(ppu->GetVCounter() == 261 && ppu->GetHCounter() == 1))
+		{
+			RunSinglePCLK();
+		}
+
+		sprintf_s(text, sizeof(text), "Line 261, H=1: BLNK=%d, I/OAM2=%d\n", ToByte(ppu->fsm.BLNK), ToByte(ppu->fsm.IOAM2));
+		Logger::WriteMessage(text);
+
+		PUIT_CHECK(ppu->fsm.BLNK == TriState::Zero, "Line 261, H=1: BLNK has fallen");
+		PUIT_CHECK(ppu->fsm.IOAM2 == TriState::One, "Line 261, H=1: I/OAM2 is active, the OAM2 clear starts at H=1");
+
+		while (!(ppu->GetVCounter() == 0 && ppu->GetHCounter() == 1))
+		{
+			RunSinglePCLK();
+		}
+
+		sprintf_s(text, sizeof(text), "Line 0, H=1: VB=%d, /VIS=%d\n", ToByte(ppu->fsm.VB), ToByte(ppu->fsm.nVIS));
+		Logger::WriteMessage(text);
+
+		PUIT_CHECK(ppu->fsm.VB == TriState::Zero, "Line 0, H=1: VB has fallen");
+		PUIT_CHECK(ppu->fsm.nVIS == TriState::Zero, "Line 0, H=1: /VIS is active");
+
+		return true;
+	}
 }
 
 namespace UnitTest
@@ -2942,6 +2985,12 @@ namespace UnitTest
 		{
 			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
 			Assert::IsTrue(ut.TestVBlankRead2002());
+		}
+
+		TEST_METHOD(TestVisAtLine0)
+		{
+			PPUSimUnitTest::UnitTest ut(PPUSim::Revision::RP2C02G);
+			Assert::IsTrue(ut.TestVisAtLine0());
 		}
 	};
 }
